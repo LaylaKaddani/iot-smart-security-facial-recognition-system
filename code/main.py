@@ -10,6 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from picamera2 import Picamera2
 
 # Import des modules
+from controle_materiel import controleur_materiel
 from securite import detecteur_anti_spoofing, ValidateurSecurite
 from base_de_donnees import *
 from reconnaissance_faciale import *
@@ -43,6 +44,14 @@ class WorkerVerification(QtCore.QObject):
     def executer(self):
         """Exécute la vérification faciale"""
         global image_verification
+        
+        # Vérifier si le capteur PIR a détecté un mouvement
+        # (optionnel : si tu veux que la vérification ne se déclenche que sur mouvement)
+        # if not controleur_materiel.lire_capteur_pir():
+        #     print("⚠️  Aucun mouvement détecté par le capteur PIR")
+        #     self.resultat_pret.emit("__AUCUN_MOUVEMENT__", None)
+        #     self.termine.emit()
+        #     return
         
         # Capturer l'image
         image = capturer_image_camera(camera)
@@ -111,6 +120,9 @@ class FenetrePrincipaleAvecVerification(FenetrePrincipale):
             QtWidgets.QMessageBox.warning(self, "Non reconnu", 
                                         "Visage inconnu ou non détecté")
             
+            # 🚨 DÉCLENCHER L'ALARME (LED rouge + buzzer)
+            controleur_materiel.declencher_alarme()
+            
             # Sauvegarder l'image non reconnue
             dossier_non_reconnus = "non_reconnues"
             if not os.path.exists(dossier_non_reconnus):
@@ -130,7 +142,7 @@ class FenetrePrincipaleAvecVerification(FenetrePrincipale):
                 
                 # Envoyer email d'alerte
                 expediteur_email.envoyer_email_alerte(
-                    "ALERTE: Personne non reconnue",
+                    "🚨 ALERTE: Personne non reconnue",
                     "Une personne non reconnue a été détectée par le système de sécurité.",
                     chemin_image,
                     None,  # Pas d'email utilisateur
@@ -141,12 +153,31 @@ class FenetrePrincipaleAvecVerification(FenetrePrincipale):
             QtWidgets.QMessageBox.critical(self, "Erreur caméra", 
                                          "La capture d'image a échoué")
         
+        elif nom == "__AUCUN_MOUVEMENT__":
+            # Optionnel : si tu utilises le PIR pour déclencher la vérification
+            QtWidgets.QMessageBox.information(self, "Aucun mouvement", 
+                                            "Aucun mouvement détecté par le capteur PIR.")
+        
         else:
             QtWidgets.QMessageBox.information(self, "Reconnu", 
                                             f"✅ Bienvenue {nom} !")
             
+            # 🚪 OUVRIR LA PORTE (servo + LED verte)
+            controleur_materiel.ouvrir_porte()
+            
             # Enregistrer l'accès autorisé
             inserer_verification(nom, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    
+    def fermer_evenement(self, event):
+        """Gère la fermeture de la fenêtre"""
+        # Arrêter la caméra
+        self.camera.stop()
+        
+        # Nettoyer les broches GPIO
+        controleur_materiel.nettoyer()
+        
+        print("✅ Système arrêté proprement")
+        super().closeEvent(event)
 
 # ----------------------------------------------------------------------
 # FONCTION PRINCIPALE
@@ -184,11 +215,17 @@ def main():
     # Exécuter l'application
     code_sortie = app.exec_()
     
-    # Nettoyer
-    camera.stop()
-    
-    print("\n✅ Système arrêté proprement")
+    # Nettoyer (fait dans fermer_evenement)
+    print("\n✅ Application terminée")
     return code_sortie
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Interruption par l'utilisateur")
+        # Nettoyer en cas d'interruption
+        controleur_materiel.nettoyer()
+    except Exception as e:
+        print(f"\n❌ Erreur critique: {e}")
+        controleur_materiel.nettoyer()
