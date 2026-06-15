@@ -5,7 +5,7 @@
 ## Description
 Système de contrôle d'accès intelligent basé sur la reconnaissance faciale, déployé sur Raspberry Pi avec des mécanismes anti-spoofing.
 
-## ✨ Fonctionnalités
+## Fonctionnalités
 
 ### Interface
 - Interface graphique intuitive avec PyQt5
